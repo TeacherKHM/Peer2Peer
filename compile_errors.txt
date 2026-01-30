@@ -1,0 +1,3 @@
+﻿src/components/RubricBuilder.tsx(1,1): error TS6133: 'useState' is declared but its value is never read.
+src/components/RubricBuilder.tsx(49,35): error TS6133: 'index' is declared but its value is never read.
+src/lib/mockApi.ts(14,13): error TS6133: 'currentUser' is declared but its value is never read.
