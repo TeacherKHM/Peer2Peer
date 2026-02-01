@@ -115,5 +115,51 @@ create policy "Teachers can update submissions for their assignments" on submiss
     )
   );
   
+-- Helper functions for RLS to avoid circular dependencies
+create or replace function check_is_reviewer(target_submission_id uuid, target_user_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from reviews
+    where submission_id = target_submission_id
+    and reviewer_id = target_user_id
+  );
+$$;
+
+create or replace function check_is_author(target_submission_id uuid, target_user_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from submissions
+    where id = target_submission_id
+    and student_id = target_user_id
+  );
+$$;
+
+create policy "Reviewers can view the submission they are evaluating" on submissions
+  for select using (check_is_reviewer(id, auth.uid()));
 -- Reviews policies
--- Complex logic: Students can view reviews assigned to them or their own submission's reviews
+create policy "Teachers can manage reviews for their assignments" on reviews
+  for all using (
+    exists (
+      select 1 from submissions s
+      join assignments a on a.id = s.assignment_id
+      where s.id = reviews.submission_id
+      and a.created_by = auth.uid()
+    )
+  );
+
+create policy "Reviewers can view assigned reviews" on reviews
+  for select using (auth.uid() = reviewer_id);
+
+create policy "Reviewers can update assigned reviews" on reviews
+  for update using (auth.uid() = reviewer_id);
+
+create policy "Students can view reviews of their own work" on reviews
+  for select using (check_is_author(submission_id, auth.uid()));

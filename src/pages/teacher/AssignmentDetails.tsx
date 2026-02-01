@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Edit2, Save, Trash2, Loader2, Users, FileText, Check, AlertCircle, Eye } from 'lucide-react'
 import { api } from '../../lib/bootstrap'
-import type { Assignment, Rubric, Submission, Profile } from '../../lib/api'
+import type { Assignment, Rubric, Submission, Profile, Review } from '../../lib/api'
 import RubricBuilder, { type RubricItem } from '../../components/RubricBuilder'
 import PDFViewer from '../../components/PDFViewer'
+import { useNotification } from '../../contexts/NotificationContext'
+import Modal from '../../components/Modal'
 
-type TabType = 'details' | 'submissions' | 'requests'
+type TabType = 'details' | 'submissions' | 'requests' | 'reviews'
 
 export default function AssignmentDetails() {
     const { id } = useParams<{ id: string }>()
@@ -21,6 +23,11 @@ export default function AssignmentDetails() {
     const [activeTab, setActiveTab] = useState<TabType>('details')
     const [previewUrl, setPreviewUrl] = useState<string | null>(null)
     const [previewTitle, setPreviewTitle] = useState<string>('')
+    const [reviews, setReviews] = useState<(Review & { reviewer: Profile, submission: Submission & { profile: Profile } })[]>([])
+    const [assigning, setAssigning] = useState(false)
+    const { showNotification } = useNotification()
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+    const [isConfirmAssignModalOpen, setIsConfirmAssignModalOpen] = useState(false)
 
     // Form state
     const [formData, setFormData] = useState({
@@ -36,23 +43,25 @@ export default function AssignmentDetails() {
 
     const fetchAllData = async () => {
         try {
-            const [assignmentRes, rubricRes, submissionsRes] = await Promise.all([
+            const [assignmentRes, rubricRes, submissionsRes, reviewsRes] = await Promise.all([
                 api.assignments.get(id!),
                 api.rubrics.getByAssignment(id!),
-                api.submissions.listByAssignment(id!)
-            ])
+                api.submissions.listByAssignment(id!),
+                api.reviews.listByAssignment(id!)
+            ]) as [any, any, any, any]
 
             if (assignmentRes.error) throw assignmentRes.error
 
             setAssignment(assignmentRes.data)
             setRubric(rubricRes.data)
             setSubmissions(submissionsRes.data || [])
+            setReviews(reviewsRes.data || [])
 
             if (assignmentRes.data) {
                 setFormData({
                     title: assignmentRes.data.title,
                     description: assignmentRes.data.description || '',
-                    due_date: assignmentRes.data.due_date ? new Date(assignmentRes.data.due_date).toISOString().split('T')[0] : ''
+                    due_date: assignmentRes.data.due_date ? new Date(assignmentRes.data.due_date).toISOString().substring(0, 16) : ''
                 })
             }
 
@@ -61,7 +70,7 @@ export default function AssignmentDetails() {
             }
         } catch (error) {
             console.error('Error fetching assignment details:', error)
-            alert('Assignment not found')
+            showNotification('error', 'Assignment not found')
             navigate('/')
         } finally {
             setLoading(false)
@@ -91,11 +100,11 @@ export default function AssignmentDetails() {
 
             setAssignment(updatedAssignment)
             setIsEditing(false)
-            alert('Assignment updated successfully!')
+            showNotification('success', 'Assignment updated successfully!')
             fetchAllData()
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error updating assignment:', error)
-            alert('Failed to update assignment')
+            showNotification('error', error.message || 'Failed to update assignment')
         } finally {
             setSaving(false)
         }
@@ -103,17 +112,16 @@ export default function AssignmentDetails() {
 
     const handleDelete = async () => {
         if (!assignment) return
-        if (!confirm('Are you sure you want to delete this assignment? All submissions and reviews will also be removed.')) return
-
+        setIsDeleteModalOpen(false)
         setDeleting(true)
         try {
             const { error } = await api.assignments.delete(assignment.id)
             if (error) throw error
-            alert('Assignment deleted successfully')
+            showNotification('success', 'Assignment deleted successfully!')
             navigate('/')
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error deleting assignment:', error)
-            alert('Failed to delete assignment')
+            showNotification('error', error.message || 'Failed to delete assignment')
         } finally {
             setDeleting(false)
         }
@@ -131,250 +139,469 @@ export default function AssignmentDetails() {
                     new_file_url: null,
                     resubmission_justification: null
                 })
-                alert('Resubmission accepted!')
+                showNotification('success', 'Resubmission accepted!')
             } else {
                 await api.submissions.update(submissionId, {
                     status: 'submitted',
                     new_file_url: null,
                     resubmission_justification: null
                 })
-                alert('Resubmission rejected.')
+                showNotification('info', 'Resubmission rejected.')
             }
             fetchAllData()
         } catch (error) {
             console.error('Error processing resubmission:', error)
+            showNotification('error', 'Failed to process resubmission')
         }
     }
 
-    if (loading) return <div className="p-8 text-center"><Loader2 className="animate-spin inline-block mr-2" /> Loading details...</div>
-    if (!assignment) return <div className="p-8 text-center">Assignment not found</div>
+    const handleAssignReviews = async () => {
+        if (!id || submissions.length === 0) {
+            showNotification('info', 'Need at least one submission to assign reviews.')
+            return
+        }
+
+        setIsConfirmAssignModalOpen(false)
+        setAssigning(true)
+        try {
+            const { data: students, error: studentsError } = await api.auth.listStudents()
+            if (studentsError) throw studentsError
+
+            const reviewerList = students || []
+            if (reviewerList.length === 0) {
+                showNotification('info', 'No students found to assign reviews to.')
+                return
+            }
+
+            const newReviews: any[] = []
+            reviewerList.forEach(student => {
+                const eligibleSubmissions = submissions.filter(s => s.student_id !== student.id)
+                const shuffled = [...eligibleSubmissions].sort(() => 0.5 - Math.random())
+                const selected = shuffled.slice(0, 2)
+
+                selected.forEach(sub => {
+                    newReviews.push({
+                        submission_id: sub.id,
+                        reviewer_id: student.id
+                    })
+                })
+            })
+
+            const { error: assignError } = await api.reviews.assignPeerReviews(id, newReviews)
+            if (assignError) throw assignError
+
+            showNotification('success', `Successfully assigned ${newReviews.length} reviews!`)
+            fetchAllData()
+        } catch (error) {
+            console.error('Error assigning reviews:', error)
+            showNotification('error', 'Failed to assign reviews')
+        } finally {
+            setAssigning(false)
+        }
+    }
+
+    if (loading) return (
+        <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+            <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+            <p className="text-sm font-black uppercase tracking-widest text-gray-400">Loading Assignment Details...</p>
+        </div>
+    )
+
+    if (!assignment) return (
+        <div className="flex flex-col items-center justify-center min-h-[400px] space-y-6">
+            <div className="h-16 w-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center">
+                <AlertCircle className="h-8 w-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight">Assignment Not Found</h2>
+            <button onClick={() => navigate('/')} className="btn-mac-secondary">
+                Return to Dashboard
+            </button>
+        </div>
+    )
 
     const pendingRequests = submissions.filter(s => s.status === 'resubmission_pending')
 
     return (
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 py-8 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-5xl mx-auto">
-                <div className="flex justify-between items-center mb-6">
-                    <button onClick={() => navigate('/')} className="flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
-                        <ArrowLeft className="mr-1 h-4 w-4" /> Back to Dashboard
-                    </button>
-                    {!isEditing && (
-                        <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center px-3 py-2 border border-red-600 rounded text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
-                            <Trash2 className="mr-2 h-4 w-4" /> {deleting ? 'Deleting...' : 'Delete Assignment'}
+        <div className="min-h-screen bg-gray-50/50 dark:bg-gray-950 pb-20">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
+                {/* Header Section */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div className="space-y-4">
+                        <button
+                            onClick={() => navigate('/')}
+                            className="btn-mac-secondary group"
+                        >
+                            <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                            Dashboard
                         </button>
+                        <div className="flex items-center gap-4">
+                            <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">
+                                {isEditing ? 'Edit Assignment' : assignment.title}
+                            </h1>
+                            {!isEditing && (
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${assignment.due_date && new Date(assignment.due_date) < new Date()
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/60'
+                                    : 'bg-green-100 text-green-700 dark:bg-green-900/60'
+                                    }`}>
+                                    {assignment.due_date && new Date(assignment.due_date) < new Date() ? 'Past Due' : 'Active'}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {!isEditing && (
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setIsEditing(true)}
+                                className="btn-mac-secondary"
+                            >
+                                <Edit2 className="mr-2 h-4 w-4" />
+                                Edit
+                            </button>
+                            <button
+                                onClick={() => setIsDeleteModalOpen(true)}
+                                disabled={deleting}
+                                className="btn-mac-secondary text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {deleting ? 'Deleting...' : 'Delete'}
+                            </button>
+                        </div>
                     )}
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                    <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                        <div className="flex justify-between items-center">
-                            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                                {isEditing ? 'Edit Assignment' : assignment.title}
-                            </h1>
-                            {!isEditing && activeTab === 'details' && (
-                                <button onClick={() => setIsEditing(true)} className="inline-flex items-center px-3 py-2 border border-blue-600 rounded text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-gray-700 transition">
-                                    <Edit2 className="mr-2 h-4 w-4" /> Edit
+                <div className="card-premium overflow-hidden bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
+                    {/* Tabs Navigation */}
+                    {!isEditing && (
+                        <div className="flex border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 px-6">
+                            {[
+                                { id: 'details', label: 'Overview', icon: FileText },
+                                { id: 'submissions', label: 'Submissions', icon: Check, count: submissions.length },
+                                { id: 'requests', label: 'Requests', icon: AlertCircle, count: pendingRequests.length, highlight: true },
+                                { id: 'reviews', label: 'Peer Reviews', icon: Users, count: reviews.length }
+                            ].map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id as TabType)}
+                                    className={`py-5 px-6 border-b-2 font-black text-[10px] uppercase tracking-widest transition-all relative flex items-center gap-2 ${activeTab === tab.id
+                                        ? 'border-indigo-600 text-indigo-600 translate-y-[1px]'
+                                        : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                                        }`}
+                                >
+                                    <tab.icon className={`h-3 w-3 ${activeTab === tab.id ? 'text-indigo-600' : 'text-gray-400'}`} />
+                                    {tab.label}
+                                    {tab.count !== undefined && (
+                                        <span className={`ml-1 py-0.5 px-2 rounded-full text-[10px] font-black ${tab.highlight && tab.count > 0
+                                            ? 'bg-orange-100 text-orange-600 animate-pulse font-black'
+                                            : activeTab === tab.id ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-500'
+                                            }`}>
+                                            {tab.count}
+                                        </span>
+                                    )}
                                 </button>
-                            )}
+                            ))}
                         </div>
+                    )}
 
-                        {!isEditing && (
-                            <div className="flex mt-4 -mb-4 space-x-8">
-                                <button onClick={() => setActiveTab('details')} className={`py-4 px-1 border-b-2 font-medium text-sm transition ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-                                    Details
-                                </button>
-                                <button onClick={() => setActiveTab('submissions')} className={`py-4 px-1 border-b-2 font-medium text-sm transition flex items-center ${activeTab === 'submissions' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-                                    Submissions <span className="ml-2 py-0.5 px-2 rounded-full bg-gray-100 text-gray-600 text-xs">{submissions.length}</span>
-                                </button>
-                                <button onClick={() => setActiveTab('requests')} className={`py-4 px-1 border-b-2 font-medium text-sm transition flex items-center ${activeTab === 'requests' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-                                    Requests {pendingRequests.length > 0 && <span className="ml-2 py-0.5 px-2 rounded-full bg-yellow-100 text-yellow-700 text-xs">{pendingRequests.length}</span>}
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="p-6">
+                    <div className="p-10">
                         {isEditing ? (
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="space-y-4">
+                            <div className="space-y-10">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                    <div className="space-y-8">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
-                                            <input type="text" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 sm:text-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500" />
+                                            <label className="block text-[10px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-3">Assignment Title</label>
+                                            <input
+                                                type="text"
+                                                value={formData.title}
+                                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                                className="input-premium"
+                                            />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Due Date</label>
-                                            <input type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 sm:text-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500" />
+                                            <label className="block text-[10px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-3">Deadline</label>
+                                            <input
+                                                type="datetime-local"
+                                                value={formData.due_date}
+                                                onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                                                className="input-premium"
+                                            />
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description / Instructions</label>
-                                        <textarea rows={5} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 sm:text-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500" />
+                                        <label className="block text-[10px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-3">Description / Instructions</label>
+                                        <textarea
+                                            rows={6}
+                                            value={formData.description}
+                                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                            className="input-premium resize-none"
+                                        />
                                     </div>
                                 </div>
-                                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                                    <RubricBuilder items={rubricItems} onChange={setRubricItems} />
+                                <div className="border-t border-gray-100 dark:border-gray-800 pt-10">
+                                    <div className="flex items-center gap-3 mb-8">
+                                        <span className="h-2 w-2 rounded-full bg-indigo-600"></span>
+                                        <h2 className="text-xs font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest leading-none">Assessment Rubric</h2>
+                                    </div>
+                                    <div className="bg-gray-50/50 dark:bg-gray-800/20 rounded-3xl p-6 border border-gray-50 dark:border-gray-800/50">
+                                        <RubricBuilder items={rubricItems} onChange={setRubricItems} />
+                                    </div>
                                 </div>
-                                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                                    <button onClick={() => { setIsEditing(false); fetchAllData(); }} className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Cancel</button>
-                                    <button onClick={handleSave} disabled={saving} className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-                                        <Save className="mr-2 h-4 w-4" /> {saving ? 'Saving...' : 'Save Changes'}
+                                <div className="flex justify-end gap-3 pt-8 border-t border-gray-100 dark:border-gray-800">
+                                    <button
+                                        onClick={() => { setIsEditing(false); fetchAllData(); }}
+                                        className="btn-mac-secondary px-8"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleSave}
+                                        disabled={saving}
+                                        className="btn-mac-primary px-10"
+                                    >
+                                        {saving ? (
+                                            <Loader2 className="animate-spin h-5 w-5 mr-3" />
+                                        ) : (
+                                            <Save className="h-5 w-5 mr-3" />
+                                        )}
+                                        {saving ? 'Saving...' : 'Update Assignment'}
                                     </button>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="animate-in fade-in duration-300">
-                                {activeTab === 'details' && (
-                                    <div className="space-y-8">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                            <div className="md:col-span-2 space-y-4">
-                                                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Instructions</h3>
-                                                <div className="prose dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-700/30 p-4 rounded-md whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                                                    {assignment.description || 'No instructions provided.'}
-                                                </div>
-                                            </div>
-                                            <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-md h-fit border border-gray-100 dark:border-gray-700">
-                                                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Deadline</h3>
-                                                <div className="text-sm font-medium dark:text-gray-200">
-                                                    {assignment.due_date ? new Date(assignment.due_date).toLocaleDateString() : 'No due date set'}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                                            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Rubric Criteria</h3>
-                                            {rubricItems.length > 0 ? (
-                                                <div className="space-y-3">
-                                                    {rubricItems.map((item) => (
-                                                        <div key={item.id} className="flex justify-between items-start bg-gray-50 dark:bg-gray-700/20 p-3 rounded-md border border-gray-100 dark:border-gray-700">
-                                                            <div>
-                                                                <div className="font-medium text-gray-900 dark:text-white">{item.title}</div>
-                                                                <div className="text-sm text-gray-500 dark:text-gray-400">{item.description}</div>
-                                                            </div>
-                                                            <div className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded text-xs font-bold">{item.max_points} pts</div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : <p className="text-gray-500 italic text-sm">No rubric criteria defined.</p>}
+                        ) : activeTab === 'details' ? (
+                            <div className="animate-in slide-in-from-bottom-2 duration-300">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                                    <div className="md:col-span-2 space-y-8">
+                                        <div>
+                                            <h3 className="text-xs font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-4">Description</h3>
+                                            <p className="text-gray-600 dark:text-gray-300 leading-relaxed font-medium">
+                                                {assignment.description || 'No description provided.'}
+                                            </p>
                                         </div>
                                     </div>
-                                )}
-
-                                {activeTab === 'submissions' && (
-                                    <div className="space-y-4">
-                                        <div className="flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-lg">
-                                            <div className="flex items-center space-x-3 text-indigo-900 dark:text-indigo-100">
-                                                <Users className="h-5 w-5" />
-                                                <span className="font-semibold text-sm">Received Submissions</span>
-                                            </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-3xl p-8 space-y-6">
+                                        <div>
+                                            <h3 className="text-[10px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-2">Deadline</h3>
+                                            <p className="text-lg font-black text-gray-900 dark:text-white">
+                                                {assignment.due_date ? new Date(assignment.due_date).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) : 'No deadline'}
+                                            </p>
                                         </div>
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                <thead className="bg-gray-50 dark:bg-gray-800">
-                                                    <tr>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">File</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                                    {submissions.length === 0 ? (
-                                                        <tr><td colSpan={3} className="px-6 py-10 text-center text-gray-500">No submissions yet.</td></tr>
-                                                    ) : submissions.map((sub) => (
-                                                        <tr key={sub.id}>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{sub.profile?.full_name || 'Anonymous'}</td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(sub.created_at).toLocaleDateString()}</td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-right flex items-center justify-end space-x-3">
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setPreviewUrl(sub.file_url)
-                                                                        setPreviewTitle(`${sub.profile?.full_name}'s Submission`)
-                                                                    }}
-                                                                    className="text-indigo-600 hover:text-indigo-900 font-medium text-sm flex items-center"
-                                                                >
-                                                                    <Eye className="h-4 w-4 mr-1" /> Preview
-                                                                </button>
-                                                                <a href={sub.file_url} target="_blank" rel="noreferrer" className="text-gray-500 hover:text-gray-700 font-medium text-sm">External</a>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                        <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
+                                            <h3 className="text-[10px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-2">Created On</h3>
+                                            <p className="text-sm font-bold text-gray-500">
+                                                {new Date(assignment.created_at || '').toLocaleDateString()}
+                                            </p>
                                         </div>
                                     </div>
-                                )}
+                                </div>
 
-                                {activeTab === 'requests' && (
-                                    <div className="space-y-6">
-                                        {pendingRequests.length === 0 ? (
-                                            <div className="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                                                <Check className="h-10 w-10 text-green-500 mx-auto mb-2" />
-                                                <p className="text-gray-500">All caught up! No pending resubmission requests.</p>
-                                            </div>
-                                        ) : pendingRequests.map((sub) => (
-                                            <div key={sub.id} className="bg-white dark:bg-gray-800 border-2 border-yellow-100 dark:border-yellow-900/30 rounded-lg overflow-hidden shadow-sm">
-                                                <div className="px-6 py-4 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-100 dark:border-yellow-900/30 flex justify-between items-center">
-                                                    <span className="font-bold text-yellow-800 dark:text-yellow-400 flex items-center">
-                                                        <AlertCircle className="h-4 w-4 mr-2" />
-                                                        Resubmission Request
+                                <div className="border-t border-gray-100 dark:border-gray-800 pt-10">
+                                    <h3 className="text-xs font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-8 text-center">Grading Rubric</h3>
+                                    <div className="grid gap-4">
+                                        {rubricItems.map((item, idx) => (
+                                            <div key={idx} className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-50 dark:border-gray-800/50 flex justify-between items-center group">
+                                                <div className="flex-1">
+                                                    <h4 className="text-sm font-black text-gray-900 dark:text-white mb-1">{item.title}</h4>
+                                                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.description}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-800">
+                                                        {item.max_points} pts
                                                     </span>
-                                                    <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-bold">PENDING APPROVAL</span>
                                                 </div>
-                                                <div className="p-6">
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : activeTab === 'submissions' ? (
+                            <div className="animate-in slide-in-from-bottom-2 duration-300 space-y-6">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-xs font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest">Received Work</h3>
+                                    <span className="text-[10px] font-bold text-gray-400 italic">Sorted by submission date</span>
+                                </div>
+                                <div className="grid gap-4">
+                                    {submissions.length === 0 ? (
+                                        <div className="text-center py-20 bg-gray-50/30 dark:bg-gray-900/50 rounded-3xl border border-dashed border-gray-200 dark:border-gray-800">
+                                            <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">No submissions yet</p>
+                                        </div>
+                                    ) : (
+                                        submissions.map(sub => (
+                                            <div key={sub.id} className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-800 flex items-center justify-between hover:shadow-lg transition-all duration-300 group">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="h-12 w-12 rounded-xl bg-gray-50 dark:bg-gray-700 flex items-center justify-center text-indigo-600 font-black">
+                                                        {sub.profile?.full_name?.charAt(0) || 'S'}
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-sm font-black text-gray-900 dark:text-white capitalize">{sub.profile?.full_name || 'Student'}</h4>
+                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                                            Submitted {new Date(sub.created_at).toLocaleDateString()}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest ${sub.status === 'resubmission_pending'
+                                                        ? 'bg-orange-50 text-orange-600'
+                                                        : 'bg-green-50 text-green-600'
+                                                        }`}>
+                                                        {sub.status.replace('_', ' ')}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => { setPreviewUrl(sub.file_url); setPreviewTitle(`${sub.profile?.full_name}'s Submission`); }}
+                                                        className="btn-mac-secondary h-9 px-4 text-[10px]"
+                                                    >
+                                                        <Eye className="h-3 w-3 mr-2" /> View File
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        ) : activeTab === 'requests' ? (
+                            <div className="animate-in slide-in-from-bottom-2 duration-300 space-y-6">
+                                <h3 className="text-xs font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest">Resubmission Requests</h3>
+                                {pendingRequests.length === 0 ? (
+                                    <div className="text-center py-20">
+                                        <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">No pending requests</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-6">
+                                        {pendingRequests.map(sub => (
+                                            <div key={sub.id} className="card-premium p-8 bg-orange-50/10 border-orange-100 dark:border-orange-900/30">
+                                                <div className="flex justify-between items-start gap-6">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-3 mb-4">
+                                                            <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-black">
+                                                                {sub.profile?.full_name?.charAt(0)}
+                                                            </div>
+                                                            <h4 className="text-lg font-black text-gray-900 dark:text-white capitalize">{sub.profile?.full_name}</h4>
+                                                        </div>
                                                         <div className="space-y-4">
                                                             <div>
-                                                                <label className="text-xs font-bold text-gray-400 uppercase">Student</label>
-                                                                <p className="text-gray-900 dark:text-white font-medium">{sub.profile?.full_name}</p>
-                                                            </div>
-                                                            <div>
-                                                                <label className="text-xs font-bold text-gray-400 uppercase">Justification</label>
-                                                                <p className="text-sm text-gray-700 dark:text-gray-300 italic p-3 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-100 dark:border-gray-600 mt-1">
-                                                                    "{sub.resubmission_justification}"
+                                                                <h5 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Justification</h5>
+                                                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 bg-white/50 dark:bg-gray-800/10 p-4 rounded-xl">
+                                                                    {sub.resubmission_justification || 'No justification provided.'}
                                                                 </p>
                                                             </div>
+                                                            <div className="flex items-center gap-4">
+                                                                <button
+                                                                    onClick={() => { setPreviewUrl(sub.new_file_url!); setPreviewTitle(`New File: ${sub.profile?.full_name}`); }}
+                                                                    className="btn-mac-secondary text-[10px] h-9 px-4 border-orange-200 text-orange-700 bg-white"
+                                                                >
+                                                                    Review New File
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                        <div className="space-y-4">
+                                                    </div>
+                                                    <div className="flex flex-col gap-2">
+                                                        <button
+                                                            onClick={() => handleResubmission(sub.id, true)}
+                                                            className="btn-mac-primary bg-orange-600 hover:bg-orange-700 h-10 px-6"
+                                                        >
+                                                            Accept
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleResubmission(sub.id, false)}
+                                                            className="btn-mac-secondary border-red-200 text-red-600 h-10 px-6"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="animate-in slide-in-from-bottom-2 duration-300 space-y-10">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-xs font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest">Peer Assessment Progress</h3>
+                                    <button
+                                        onClick={() => setIsConfirmAssignModalOpen(true)}
+                                        disabled={assigning}
+                                        className="btn-mac-primary h-11 px-6 text-xs"
+                                    >
+                                        <Users className="h-4 w-4 mr-2" />
+                                        {assigning ? 'Distributing...' : 'Redistribute Reviews'}
+                                    </button>
+                                </div>
+
+                                {reviews.length === 0 ? (
+                                    <div className="text-center py-20 bg-gray-50/50 dark:bg-gray-800/20 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-800">
+                                        <Users className="h-10 w-10 text-gray-300 mx-auto mb-4" />
+                                        <p className="text-gray-500 font-bold text-sm mb-6">No reviews have been assigned yet.</p>
+                                        <button onClick={() => setIsConfirmAssignModalOpen(true)} className="btn-mac-primary inline-flex">
+                                            Assign Reviews Now
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-4">
+                                        {reviews.map(review => (
+                                            <div key={review.id} className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-800 hover:shadow-md transition-all">
+                                                <div className="flex flex-col gap-6">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="flex -space-x-4">
+                                                                <div className="h-10 w-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 border-2 border-white dark:border-gray-800 flex items-center justify-center text-xs font-black text-indigo-600 dark:text-indigo-400" title="Reviewer">
+                                                                    {review.reviewer?.full_name?.charAt(0)}
+                                                                </div>
+                                                                <div className="h-10 w-10 rounded-full bg-emerald-50 dark:bg-emerald-900/30 border-2 border-white dark:border-gray-800 flex items-center justify-center text-xs font-black text-emerald-600 dark:text-emerald-400" title="Author">
+                                                                    {review.submission?.profile?.full_name?.charAt(0)}
+                                                                </div>
+                                                            </div>
                                                             <div>
-                                                                <label className="text-xs font-bold text-gray-400 uppercase pb-2 block">Files Comparison</label>
-                                                                <div className="space-y-3">
-                                                                    <div className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/10 rounded border border-red-100 dark:border-red-900/20">
-                                                                        <span className="text-xs text-red-700 font-bold uppercase">Old File</span>
-                                                                        <div className="flex space-x-3">
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    setPreviewUrl(sub.file_url)
-                                                                                    setPreviewTitle(`${sub.profile?.full_name} - Old File`)
-                                                                                }}
-                                                                                className="text-xs font-bold text-red-600 underline flex items-center"
-                                                                            >
-                                                                                <Eye className="h-3 w-3 mr-1" /> Preview
-                                                                            </button>
-                                                                            <a href={sub.file_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-red-400 underline flex items-center"><FileText className="h-3 w-3 mr-1" /> External</a>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/10 rounded border border-green-100 dark:border-green-900/20">
-                                                                        <span className="text-xs text-green-700 font-bold uppercase">New File</span>
-                                                                        <div className="flex space-x-3">
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    setPreviewUrl(sub.new_file_url!)
-                                                                                    setPreviewTitle(`${sub.profile?.full_name} - New File`)
-                                                                                }}
-                                                                                className="text-xs font-bold text-green-600 underline flex items-center"
-                                                                            >
-                                                                                <Eye className="h-3 w-3 mr-1" /> Preview
-                                                                            </button>
-                                                                            <a href={sub.new_file_url!} target="_blank" rel="noreferrer" className="text-xs font-bold text-green-400 underline flex items-center font-bold"><FileText className="h-3 w-3 mr-1" /> External</a>
-                                                                        </div>
-                                                                    </div>
+                                                                <div className="text-sm font-black text-gray-900 dark:text-white capitalize">
+                                                                    {review.reviewer?.full_name} <span className="text-gray-400 font-medium">reviewing</span> {review.submission?.profile?.full_name}
+                                                                </div>
+                                                                <div className="flex items-center gap-3 mt-1">
+                                                                    <span className={`text-[9px] font-black uppercase tracking-widest ${review.score !== null ? 'text-green-600' : 'text-gray-400'}`}>
+                                                                        {review.score !== null ? 'Completed' : 'Pending'}
+                                                                    </span>
+                                                                    {review.score !== null && (
+                                                                        <span className="h-1 w-1 rounded-full bg-gray-300"></span>
+                                                                    )}
+                                                                    {review.score !== null && (
+                                                                        <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">
+                                                                            Score: {review.score}%
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="mt-8 flex justify-end space-x-3">
-                                                        <button onClick={() => handleResubmission(sub.id, false)} className="px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-md transition border border-red-200">Deny Request</button>
-                                                        <button onClick={() => handleResubmission(sub.id, true)} className="px-4 py-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 rounded-md shadow-sm transition">Accept & Replace</button>
-                                                    </div>
+
+                                                    {review.score !== null && review.feedback && typeof review.feedback === 'object' && (
+                                                        <div className="border-t border-gray-100 dark:border-gray-800 pt-6 space-y-6">
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                {rubricItems.map((item) => {
+                                                                    const fb = review.feedback as any;
+                                                                    const score = fb?.scores?.[item.id] || 0;
+                                                                    const comment = fb?.criteriaFeedback?.[item.id] || '';
+
+                                                                    return (
+                                                                        <div key={item.id} className="bg-gray-50/50 dark:bg-gray-900/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800/50">
+                                                                            <div className="flex justify-between items-center mb-2">
+                                                                                <span className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">{item.title}</span>
+                                                                                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded">
+                                                                                    {score}/{item.max_points} pts
+                                                                                </span>
+                                                                            </div>
+                                                                            <p className="text-xs font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic">
+                                                                                "{comment || 'No comment provided.'}"
+                                                                            </p>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                            {(review.feedback as any).overallTips && (
+                                                                <div className="bg-indigo-50/30 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100/20 dark:border-indigo-800/20">
+                                                                    <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Overall Tips</p>
+                                                                    <p className="text-xs font-bold text-gray-600 dark:text-gray-400 italic">"{(review.feedback as any).overallTips}"</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
@@ -385,6 +612,57 @@ export default function AssignmentDetails() {
                     </div>
                 </div>
             </div>
+
+            {/* Modals */}
+            <Modal
+                isOpen={isDeleteModalOpen}
+                onClose={() => setIsDeleteModalOpen(false)}
+                title="Delete Assignment"
+                footer={
+                    <div className="flex gap-3 justify-end w-full">
+                        <button onClick={() => setIsDeleteModalOpen(false)} className="btn-mac-secondary">Cancel</button>
+                        <button onClick={handleDelete} className="btn-mac-primary bg-red-600 hover:bg-red-700 shadow-red-100 dark:shadow-none font-black uppercase tracking-widest text-xs">Confirm Delete</button>
+                    </div>
+                }
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed font-medium">
+                        Are you sure you want to delete <span className="font-black text-gray-900 dark:text-white">"{assignment.title}"</span>?
+                    </p>
+                    <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-2xl">
+                        <p className="text-xs font-bold text-red-700 dark:text-red-400 leading-relaxed">
+                            <span className="font-black uppercase tracking-widest block mb-1 underline underline-offset-4 decoration-red-200">Destructive Action</span>
+                            All student submissions, peer reviews, and grading data associated with this assignment will be permanently erased.
+                        </p>
+                    </div>
+                </div>
+            </Modal>
+
+            <Modal
+                isOpen={isConfirmAssignModalOpen}
+                onClose={() => setIsConfirmAssignModalOpen(false)}
+                title="Redistribute Reviews"
+                footer={
+                    <div className="flex gap-3 justify-end w-full">
+                        <button onClick={() => setIsConfirmAssignModalOpen(false)} className="btn-mac-secondary">Cancel</button>
+                        <button onClick={handleAssignReviews} disabled={assigning} className="btn-mac-primary">
+                            {assigning ? 'Processing...' : 'Assign Reviews'}
+                        </button>
+                    </div>
+                }
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed font-medium">
+                        This will automatically assign 2 peer reviews to every student.
+                    </p>
+                    <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-2xl">
+                        <p className="text-xs font-bold text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                            <span className="font-black uppercase tracking-widest block mb-1">Note</span>
+                            Existing review assignments for this project will be overwritten. Completed reviews will be preserved but may be re-ordered.
+                        </p>
+                    </div>
+                </div>
+            </Modal>
 
             {previewUrl && (
                 <PDFViewer

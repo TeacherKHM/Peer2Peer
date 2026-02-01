@@ -7,14 +7,18 @@ import Dashboard from './pages/DashboardPage'
 import CreateAssignment from './pages/teacher/CreateAssignment'
 import RubricTemplates from './pages/teacher/RubricTemplates'
 import CreateRubric from './pages/teacher/CreateRubric'
+import PerformReview from './pages/student/PerformReview'
 
 import AssignmentDetails from './pages/teacher/AssignmentDetails'
+import ResetPassword from './pages/ResetPassword'
+import ViewResults from './pages/student/ViewResults'
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Auth />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Protected Routes */}
         <Route element={<ProtectedRoute />}>
@@ -33,6 +37,8 @@ function App() {
         <Route element={<ProtectedRoute allowedRoles={['student']} />}>
           <Route path="/student/assignments/:id/submit" element={<SubmitAssignment />} />
           <Route path="/student/assignments/:id/view" element={<ViewSubmission />} />
+          <Route path="/student/reviews/:id" element={<PerformReview />} />
+          <Route path="/student/results/:submissionId" element={<ViewResults />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -4,11 +4,13 @@ import { ArrowLeft, Loader2, UploadCloud } from 'lucide-react'
 import { api } from '../../lib/bootstrap'
 import type { Assignment } from '../../lib/api'
 import { useAuth } from '../../contexts/AuthContext'
+import { useNotification } from '../../contexts/NotificationContext'
 
 export default function SubmitAssignment() {
     const { id } = useParams<{ id: string }>()
     const navigate = useNavigate()
     const { user } = useAuth()
+    const { showNotification } = useNotification()
     const [assignment, setAssignment] = useState<Assignment | null>(null)
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
@@ -25,7 +27,7 @@ export default function SubmitAssignment() {
             setAssignment(data)
         } catch (error) {
             console.error('Error fetching assignment:', error)
-            alert('Assignment not found')
+            showNotification('error', 'Assignment not found')
             navigate('/')
         } finally {
             setLoading(false)
@@ -36,35 +38,28 @@ export default function SubmitAssignment() {
         e.preventDefault()
 
         if (!user) {
-            alert('You must be logged in to submit.')
+            showNotification('error', 'You must be logged in to submit.')
             return
         }
         if (!id) {
-            alert('Error: Assignment ID is missing.')
+            showNotification('error', 'Error: Assignment ID is missing.')
             return
         }
         if (!file) {
-            alert('Please select a file to upload.')
+            showNotification('info', 'Please select a file to upload.')
             return
         }
 
         setSubmitting(true)
         try {
-            // 1. Upload file to Supabase Storage
             const fileExt = file.name.split('.').pop()
             const fileName = `${user.id}/${id}-${Date.now()}.${fileExt}`
             const filePath = `${fileName}`
 
-            console.log('Uploading file...', filePath)
             const { error: uploadError } = await api.storage.uploadFile('submissions', filePath, file)
-
             if (uploadError) throw uploadError
 
-            // 2. Get Public URL
             const publicUrl = api.storage.getPublicUrl('submissions', filePath)
-
-            // 3. Create Submission record
-            console.log('Creating submission record with URL:', publicUrl)
             const { error: submitError } = await api.submissions.create({
                 assignment_id: id,
                 student_id: user.id,
@@ -73,87 +68,140 @@ export default function SubmitAssignment() {
 
             if (submitError) throw submitError
 
-            alert('Assignment submitted successfully!')
+            showNotification('success', 'Assignment submitted successfully!')
             navigate('/')
         } catch (error) {
             console.error('Error submitting:', error)
-            alert('Failed to submit assignment: ' + ((error as any).message || 'Unknown error'))
+            showNotification('error', 'Failed to submit: ' + ((error as any).message || 'Unknown error'))
         } finally {
             setSubmitting(false)
         }
     }
 
-    if (loading) return <div className="p-8 text-center"><Loader2 className="animate-spin inline-block mr-2" /> Loading...</div>
-    if (!assignment) return <div className="p-8 text-center">Assignment not found</div>
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+            </div>
+        )
+    }
+
+    if (!assignment) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950 space-y-4">
+                <p className="text-lg font-bold text-gray-900 dark:text-white">Assignment not found</p>
+                <button onClick={() => navigate('/')} className="btn-mac-secondary">Back to Dashboard</button>
+            </div>
+        )
+    }
 
     return (
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 py-8 px-4 sm:px-6 lg:px-8">
+        <div className="min-h-screen bg-gray-50/50 dark:bg-gray-950 py-12 px-4">
             <div className="max-w-3xl mx-auto space-y-8">
-                <div>
-                    <button
-                        onClick={() => navigate('/')}
-                        className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                    >
-                        <ArrowLeft className="mr-1 h-4 w-4" />
-                        Back to Dashboard
-                    </button>
-                    <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">Submit Assignment</h1>
-                    <div className="mt-2 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
-                        <p className="text-lg font-semibold text-indigo-900 dark:text-indigo-100">
-                            {assignment.title}
-                        </p>
-                        <p className="text-sm text-indigo-700 dark:text-indigo-300">
-                            Due: {assignment.due_date ? new Date(assignment.due_date).toLocaleDateString() : 'No due date'}
-                        </p>
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div>
+                        <button
+                            onClick={() => navigate('/')}
+                            className="btn-mac-secondary mb-6 group"
+                        >
+                            <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                            Dashboard
+                        </button>
+                        <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">Submit Assignment</h1>
+                        <p className="text-gray-500 dark:text-gray-400 mt-2 font-medium">Please review the instructions before uploading.</p>
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow space-y-8">
+                <div className="card-premium p-10 bg-white dark:bg-gray-900 space-y-10 border border-gray-100 dark:border-gray-800">
                     <div>
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">Instructions</h3>
-                        <div className="mt-2 prose dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-700/30 p-4 rounded-md">
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="h-2 w-2 rounded-full bg-indigo-600"></span>
+                            <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none">Assignment Overview</h2>
+                        </div>
+                        <div className="p-6 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl border border-indigo-100 dark:border-indigo-800">
+                            <h3 className="text-xl font-black text-indigo-900 dark:text-indigo-100 mb-2">
+                                {assignment.title}
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Due Date:</span>
+                                <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">
+                                    {assignment.due_date ? new Date(assignment.due_date).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'No due date'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="h-2 w-2 rounded-full bg-indigo-600"></span>
+                            <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none">Instructions</h2>
+                        </div>
+                        <div className="p-6 bg-gray-50 dark:bg-gray-800/50 rounded-2xl text-sm text-gray-600 dark:text-gray-400 leading-relaxed whitespace-pre-wrap font-medium">
                             {assignment.description || 'No instructions provided.'}
                         </div>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-6 border-t border-gray-200 dark:border-gray-700 pt-8">
+                    <form onSubmit={handleSubmit} className="space-y-8 pt-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Upload Document (PDF, Word, etc.)
-                            </label>
+                            <div className="flex items-center gap-3 mb-6">
+                                <span className="h-2 w-2 rounded-full bg-indigo-600"></span>
+                                <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none">Upload Document</h2>
+                            </div>
 
-                            <div className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${file ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/10' : 'border-gray-300 dark:border-gray-600'}`}>
-                                <div className="space-y-1 text-center">
-                                    <UploadCloud className={`mx-auto h-12 w-12 ${file ? 'text-indigo-500' : 'text-gray-400'}`} />
-                                    <div className="flex text-sm text-gray-600 dark:text-gray-400">
-                                        <label htmlFor="file-upload" className="relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none">
-                                            <span>{file ? 'Change file' : 'Select a file'}</span>
-                                            <input
-                                                id="file-upload"
-                                                name="file-upload"
-                                                type="file"
-                                                className="sr-only"
-                                                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                                            />
-                                        </label>
-                                        <p className="pl-1">or drag and drop</p>
+                            <div
+                                className={`group relative flex flex-col items-center justify-center min-h-[220px] rounded-3xl border-2 border-dashed transition-all duration-300 ${file
+                                        ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20'
+                                        : 'border-gray-200 dark:border-gray-800 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                                    }`}
+                            >
+                                <input
+                                    id="file-upload"
+                                    type="file"
+                                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                                />
+                                <div className="text-center p-8">
+                                    <div className={`mx-auto h-16 w-16 mb-4 rounded-2xl flex items-center justify-center transition-all ${file ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 group-hover:text-indigo-500 group-hover:scale-110'
+                                        }`}>
+                                        <UploadCloud className="h-8 w-8" />
                                     </div>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        {file ? `Selected: ${file.name}` : 'PDF, DOCX, etc. up to 10MB'}
+                                    <p className="text-lg font-black text-gray-900 dark:text-white mb-1">
+                                        {file ? 'File Attached' : 'Drop your file here'}
                                     </p>
+                                    <p className="text-sm font-bold text-gray-400">
+                                        {file ? file.name : 'PDF, DOCX, or ZIP up to 10MB'}
+                                    </p>
+                                    {file && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); setFile(null); }}
+                                            className="mt-4 text-xs font-black text-red-500 hover:text-red-600 uppercase tracking-widest relative z-20"
+                                        >
+                                            Remove File
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex justify-end pt-4">
+                        <div className="pt-4">
                             <button
                                 type="submit"
                                 disabled={submitting || !file}
-                                className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition"
+                                className="w-full btn-mac-primary h-14 text-base shadow-indigo-100 dark:shadow-none"
                             >
-                                {submitting ? <Loader2 className="animate-spin -ml-1 mr-3 h-5 w-5" /> : <UploadCloud className="-ml-1 mr-3 h-5 w-5" />}
-                                {submitting ? 'Uploading...' : 'Submit Assignment'}
+                                {submitting ? (
+                                    <Loader2 className="animate-spin h-6 w-6 mr-3" />
+                                ) : (
+                                    <UploadCloud className="h-6 w-6 mr-3" />
+                                )}
+                                <span className="font-black uppercase tracking-widest">
+                                    {submitting ? 'Uploading Submission...' : 'Send Submission'}
+                                </span>
                             </button>
+                            <p className="text-center text-[10px] font-bold text-gray-400 mt-4 uppercase tracking-widest">
+                                By submitting, you agree to have your work reviewed by peers.
+                            </p>
                         </div>
                     </form>
                 </div>
