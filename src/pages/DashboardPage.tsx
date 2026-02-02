@@ -12,7 +12,7 @@ export default function Dashboard() {
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
                     <div className="flex items-center gap-4">
                         <span className="text-gray-700 dark:text-gray-300">
-                            Welcome, {profile?.full_name} ({profile?.role})
+                            Welcome, {profile?.full_name}
                         </span>
                         <button
                             onClick={signOut}

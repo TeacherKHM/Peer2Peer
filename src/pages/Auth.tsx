@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/bootstrap'
-import { Mail, Lock, User, Loader2, ClipboardCheck } from 'lucide-react'
+import { Mail, Lock, User, Loader2, ClipboardCheck, Eye, EyeOff } from 'lucide-react'
 import { useNotification } from '../contexts/NotificationContext'
 
 export default function Auth() {
@@ -11,8 +11,11 @@ export default function Auth() {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [fullName, setFullName] = useState('')
-    const [role, setRole] = useState<'student' | 'teacher'>('student')
+    const [showPassword, setShowPassword] = useState(false)
     const navigate = useNavigate()
+
+    const isRegistration = !isLogin
+    const hasInvalidDomain = isRegistration && email.length > 0 && !email.endsWith('@irsl.edu.mx')
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -26,9 +29,16 @@ export default function Auth() {
                 showNotification('success', 'Welcome back!')
                 navigate('/')
             } else {
+                // Domain Restriction
+                if (!email.endsWith('@irsl.edu.mx')) {
+                    showNotification('error', 'Only accounts with @irsl.edu.mx domain are allowed for this test version.')
+                    setLoading(false)
+                    return
+                }
+
                 const { user: newUser, error } = await api.auth.signUp(email, password, {
                     full_name: fullName,
-                    role: role
+                    role: 'student' // Force student role for test deployment
                 })
                 if (error) throw error
 
@@ -100,17 +110,22 @@ export default function Auth() {
                         <label className="block text-[10px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest ml-1 mb-2">Email address</label>
                         <div className="relative group">
                             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                <Mail className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                                <Mail className={`h-5 w-5 ${hasInvalidDomain ? 'text-red-400' : 'text-gray-400'} group-focus-within:text-indigo-500 transition-colors`} />
                             </div>
                             <input
                                 type="email"
                                 required
-                                className="input-premium pl-11"
-                                placeholder="name@example.com"
+                                className={`input-premium pl-11 ${hasInvalidDomain ? 'border-red-500 bg-red-50/50 dark:bg-red-900/10 focus:ring-red-500/20 focus:border-red-500' : ''}`}
+                                placeholder="name@irsl.edu.mx"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                             />
                         </div>
+                        {hasInvalidDomain && (
+                            <p className="mt-2 text-[10px] font-bold text-red-500 uppercase tracking-widest animate-in fade-in slide-in-from-top-1">
+                                Must use @irsl.edu.mx domain
+                            </p>
+                        )}
                     </div>
 
                     <div>
@@ -131,43 +146,24 @@ export default function Auth() {
                                 <Lock className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
                             </div>
                             <input
-                                type="password"
+                                type={showPassword ? "text" : "password"}
                                 required
-                                className="input-premium pl-11"
+                                className="input-premium pl-11 pr-11"
                                 placeholder="••••••••"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-indigo-500 transition-colors"
+                            >
+                                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
                         </div>
                     </div>
 
-                    {!isLogin && (
-                        <div>
-                            <label className="block text-[10px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest ml-1 mb-2">I am a...</label>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setRole('student')}
-                                    className={`py-2 px-4 rounded-xl border-2 text-sm font-bold transition-all ${role === 'student'
-                                        ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
-                                        : 'border-gray-100 dark:border-gray-800 text-gray-500 hover:border-gray-200'
-                                        }`}
-                                >
-                                    Student
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setRole('teacher')}
-                                    className={`py-2 px-4 rounded-xl border-2 text-sm font-bold transition-all ${role === 'teacher'
-                                        ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
-                                        : 'border-gray-100 dark:border-gray-800 text-gray-500 hover:border-gray-200'
-                                        }`}
-                                >
-                                    Teacher
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    {/* Role selection hidden for test deployment - all new accounts are students */}
 
                     <div className="pt-2">
                         <button
