@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Loader2, UploadCloud } from 'lucide-react'
+import { ArrowLeft, Loader2, UploadCloud, Link as LinkIcon, FileText } from 'lucide-react'
 import { api } from '../../lib/bootstrap'
 import type { Assignment } from '../../lib/api'
 import { useAuth } from '../../contexts/AuthContext'
@@ -15,6 +15,7 @@ export default function SubmitAssignment() {
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
     const [file, setFile] = useState<File | null>(null)
+    const [submissionUrl, setSubmissionUrl] = useState('')
 
     useEffect(() => {
         if (id) fetchAssignment()
@@ -45,21 +46,56 @@ export default function SubmitAssignment() {
             showNotification('error', 'Error: Assignment ID is missing.')
             return
         }
-        if (!file) {
-            showNotification('info', 'Please select a file to upload.')
-            return
+
+        const submissionType = assignment?.submission_type || 'pdf'
+
+        // Validation based on submission type
+        if (submissionType === 'pdf') {
+            if (!file) {
+                showNotification('info', 'Please select a PDF file to upload.')
+                return
+            }
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                showNotification('error', 'Only PDF files are accepted for this assignment.')
+                return
+            }
+        } else if (submissionType === 'google_docs' || submissionType === 'url') {
+            if (!submissionUrl.trim()) {
+                showNotification('info', `Please enter a valid ${submissionType === 'google_docs' ? 'Google Docs link' : 'URL'}.`)
+                return
+            }
+            // Basic URL validation
+            try {
+                new URL(submissionUrl)
+            } catch {
+                showNotification('error', 'Please enter a valid URL.')
+                return
+            }
+            if (submissionType === 'google_docs' && !submissionUrl.includes('docs.google.com')) {
+                showNotification('error', 'Please enter a valid Google Docs link.')
+                return
+            }
         }
 
         setSubmitting(true)
         try {
-            const fileExt = file.name.split('.').pop()
-            const fileName = `${user.id}/${id}-${Date.now()}.${fileExt}`
-            const filePath = `${fileName}`
+            let publicUrl = ''
 
-            const { error: uploadError } = await api.storage.uploadFile('submissions', filePath, file)
-            if (uploadError) throw uploadError
+            if (submissionType === 'pdf') {
+                // Upload file to storage
+                const fileExt = file!.name.split('.').pop()
+                const fileName = `${user.id}/${id}-${Date.now()}.${fileExt}`
+                const filePath = `${fileName}`
 
-            const publicUrl = api.storage.getPublicUrl('submissions', filePath)
+                const { error: uploadError } = await api.storage.uploadFile('submissions', filePath, file!)
+                if (uploadError) throw uploadError
+
+                publicUrl = api.storage.getPublicUrl('submissions', filePath)
+            } else {
+                // Use the URL directly
+                publicUrl = submissionUrl
+            }
+
             const { error: submitError } = await api.submissions.create({
                 assignment_id: id,
                 student_id: user.id,
@@ -145,49 +181,80 @@ export default function SubmitAssignment() {
                         <div>
                             <div className="flex items-center gap-3 mb-6">
                                 <span className="h-2 w-2 rounded-full bg-indigo-600"></span>
-                                <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none">Upload Document</h2>
+                                <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none">
+                                    {assignment.submission_type === 'pdf' && 'Upload PDF Document'}
+                                    {assignment.submission_type === 'google_docs' && 'Google Docs Link'}
+                                    {assignment.submission_type === 'url' && 'Website URL'}
+                                </h2>
                             </div>
 
-                            <div
-                                className={`group relative flex flex-col items-center justify-center min-h-[220px] rounded-3xl border-2 border-dashed transition-all duration-300 ${file
+                            {assignment.submission_type === 'pdf' ? (
+                                <div
+                                    className={`group relative flex flex-col items-center justify-center min-h-[220px] rounded-3xl border-2 border-dashed transition-all duration-300 ${file
                                         ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20'
                                         : 'border-gray-200 dark:border-gray-800 hover:border-indigo-400 hover:bg-gray-50 dark:hover:bg-gray-800/50'
-                                    }`}
-                            >
-                                <input
-                                    id="file-upload"
-                                    type="file"
-                                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                    onChange={(e) => setFile(e.target.files?.[0] || null)}
-                                />
-                                <div className="text-center p-8">
-                                    <div className={`mx-auto h-16 w-16 mb-4 rounded-2xl flex items-center justify-center transition-all ${file ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 group-hover:text-indigo-500 group-hover:scale-110'
-                                        }`}>
-                                        <UploadCloud className="h-8 w-8" />
+                                        }`}
+                                >
+                                    <input
+                                        id="file-upload"
+                                        type="file"
+                                        accept=".pdf"
+                                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                                    />
+                                    <div className="text-center p-8">
+                                        <div className={`mx-auto h-16 w-16 mb-4 rounded-2xl flex items-center justify-center transition-all ${file ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 group-hover:text-indigo-500 group-hover:scale-110'
+                                            }`}>
+                                            <FileText className="h-8 w-8" />
+                                        </div>
+                                        <p className="text-lg font-black text-gray-900 dark:text-white mb-1">
+                                            {file ? 'PDF Attached' : 'Drop your PDF here'}
+                                        </p>
+                                        <p className="text-sm font-bold text-gray-400">
+                                            {file ? file.name : 'PDF files only'}
+                                        </p>
+                                        {file && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.preventDefault(); setFile(null); }}
+                                                className="mt-4 text-xs font-black text-red-500 hover:text-red-600 uppercase tracking-widest relative z-20"
+                                            >
+                                                Remove File
+                                            </button>
+                                        )}
                                     </div>
-                                    <p className="text-lg font-black text-gray-900 dark:text-white mb-1">
-                                        {file ? 'File Attached' : 'Drop your file here'}
-                                    </p>
-                                    <p className="text-sm font-bold text-gray-400">
-                                        {file ? file.name : 'PDF, DOCX, or ZIP up to 10MB'}
-                                    </p>
-                                    {file && (
-                                        <button
-                                            type="button"
-                                            onClick={(e) => { e.preventDefault(); setFile(null); }}
-                                            className="mt-4 text-xs font-black text-red-500 hover:text-red-600 uppercase tracking-widest relative z-20"
-                                        >
-                                            Remove File
-                                        </button>
-                                    )}
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="relative group">
+                                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                            <LinkIcon className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                                        </div>
+                                        <input
+                                            type="url"
+                                            required
+                                            value={submissionUrl}
+                                            onChange={(e) => setSubmissionUrl(e.target.value)}
+                                            className="input-premium pl-11"
+                                            placeholder={
+                                                assignment.submission_type === 'google_docs'
+                                                    ? 'https://docs.google.com/document/d/...'
+                                                    : 'https://example.com'
+                                            }
+                                        />
+                                    </div>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                        {assignment.submission_type === 'google_docs' && '📝 Make sure your Google Doc is set to "Anyone with the link can view"'}
+                                        {assignment.submission_type === 'url' && '🌐 Paste the URL of your deployed website or web project'}
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="pt-4">
                             <button
                                 type="submit"
-                                disabled={submitting || !file}
+                                disabled={submitting || (assignment.submission_type === 'pdf' ? !file : !submissionUrl.trim())}
                                 className="w-full btn-mac-primary h-14 text-base shadow-indigo-100 dark:shadow-none"
                             >
                                 {submitting ? (

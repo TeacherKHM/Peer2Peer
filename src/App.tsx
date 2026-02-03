@@ -31,6 +31,7 @@ function App() {
           <Route path="/teacher/assignments/:id" element={<AssignmentDetails />} />
           <Route path="/teacher/rubrics" element={<RubricTemplates />} />
           <Route path="/teacher/rubrics/new" element={<CreateRubric />} />
+          <Route path="/teacher/rubrics/edit/:id" element={<CreateRubric />} />
         </Route>
 
         {/* Student Routes */}

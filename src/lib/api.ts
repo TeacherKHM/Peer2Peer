@@ -31,6 +31,7 @@ export interface AssignmentsApi {
 
 export interface RubricsApi {
     create(rubric: Database['public']['Tables']['rubrics']['Insert']): Promise<{ data: Rubric | null; error: any }>
+    getById(id: string): Promise<{ data: Rubric | null; error: any }>
     getByAssignment(assignmentId: string): Promise<{ data: Rubric | null; error: any }>
     update(id: string, rubric: Database['public']['Tables']['rubrics']['Update']): Promise<{ data: Rubric | null; error: any }>
     listTemplates(): Promise<{ data: Rubric[] | null; error: any }>

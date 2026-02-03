@@ -35,6 +35,7 @@ export interface Database {
                     title: string
                     description: string | null
                     due_date: string | null
+                    submission_type: 'pdf' | 'google_docs' | 'url'
                     created_by: string
                     created_at: string
                 }
@@ -43,6 +44,7 @@ export interface Database {
                     title: string
                     description?: string | null
                     due_date?: string | null
+                    submission_type?: 'pdf' | 'google_docs' | 'url'
                     created_by: string
                     created_at?: string
                 }
@@ -51,6 +53,7 @@ export interface Database {
                     title?: string
                     description?: string | null
                     due_date?: string | null
+                    submission_type?: 'pdf' | 'google_docs' | 'url'
                     created_by?: string
                     created_at?: string
                 }

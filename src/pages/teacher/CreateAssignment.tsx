@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Loader2, Save } from 'lucide-react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { ArrowLeft, Loader2, Save, FileText, Globe, Link } from 'lucide-react'
 import { api } from '../../lib/bootstrap'
 import { useAuth } from '../../contexts/AuthContext'
 import RubricBuilder, { type RubricItem } from '../../components/RubricBuilder'
@@ -9,12 +9,14 @@ import { useNotification } from '../../contexts/NotificationContext'
 
 export default function CreateAssignment() {
     const navigate = useNavigate()
+    const location = useLocation()
     const { user } = useAuth()
     const { showNotification } = useNotification()
     const [loading, setLoading] = useState(false)
     const [title, setTitle] = useState('')
     const [description, setDescription] = useState('')
     const [dueDate, setDueDate] = useState('')
+    const [submissionType, setSubmissionType] = useState<'pdf' | 'google_docs' | 'url'>('pdf')
     const [rubricItems, setRubricItems] = useState<RubricItem[]>([])
 
     // Rubric Template Logic
@@ -23,13 +25,32 @@ export default function CreateAssignment() {
 
     useEffect(() => {
         api.rubrics.listTemplates().then(({ data }: { data: Rubric[] | null }) => {
-            if (data) setTemplates(data)
+            if (data) {
+                setTemplates(data)
+
+                // Check if we came from RubricTemplates with a specific template
+                const state = location.state as { rubricTemplateId?: string }
+                if (state?.rubricTemplateId) {
+                    const template = data.find(t => t.id === state.rubricTemplateId)
+                    if (template) {
+                        setSelectedTemplate(template.id)
+                        const items = (template.criteria as any[]).map(item => ({
+                            ...item,
+                            id: crypto.randomUUID()
+                        }))
+                        setRubricItems(items)
+                    }
+                }
+            }
         })
-    }, [])
+    }, [location.state])
 
     const handleTemplateChange = (templateId: string) => {
         setSelectedTemplate(templateId)
-        if (!templateId) return
+        if (!templateId) {
+            setRubricItems([])
+            return
+        }
 
         const template = templates.find(t => t.id === templateId)
         if (template && Array.isArray(template.criteria)) {
@@ -39,6 +60,7 @@ export default function CreateAssignment() {
                 id: crypto.randomUUID()
             }))
             setRubricItems(items)
+            showNotification('success', `Applying template: ${template.title || 'Untitled'}`)
         }
     }
 
@@ -53,6 +75,7 @@ export default function CreateAssignment() {
                 title,
                 description,
                 due_date: dueDate ? new Date(dueDate).toISOString() : null,
+                submission_type: submissionType,
                 created_by: user.id
             })
 
@@ -134,6 +157,50 @@ export default function CreateAssignment() {
                                         onChange={(e) => setDueDate(e.target.value)}
                                         className="input-premium"
                                     />
+                                </div>
+
+                                <div>
+                                    <label className="block text-[10px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-3">Submission Type</label>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSubmissionType('pdf')}
+                                            className={`py-3 px-4 rounded-xl border-2 text-sm font-bold transition-all flex flex-col items-center gap-2 ${submissionType === 'pdf'
+                                                ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+                                                : 'border-gray-100 dark:border-gray-800 text-gray-500 hover:border-gray-200'
+                                                }`}
+                                        >
+                                            <FileText className="h-5 w-5" />
+                                            <span>PDF</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSubmissionType('google_docs')}
+                                            className={`py-3 px-4 rounded-xl border-2 text-sm font-bold transition-all flex flex-col items-center gap-2 ${submissionType === 'google_docs'
+                                                ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+                                                : 'border-gray-100 dark:border-gray-800 text-gray-500 hover:border-gray-200'
+                                                }`}
+                                        >
+                                            <Globe className="h-5 w-5" />
+                                            <span>Google Docs</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSubmissionType('url')}
+                                            className={`py-3 px-4 rounded-xl border-2 text-sm font-bold transition-all flex flex-col items-center gap-2 ${submissionType === 'url'
+                                                ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+                                                : 'border-gray-100 dark:border-gray-800 text-gray-500 hover:border-gray-200'
+                                                }`}
+                                        >
+                                            <Link className="h-5 w-5" />
+                                            <span>Web URL</span>
+                                        </button>
+                                    </div>
+                                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                        {submissionType === 'pdf' && 'Students will upload PDF files'}
+                                        {submissionType === 'google_docs' && 'Students will submit Google Docs share links'}
+                                        {submissionType === 'url' && 'Students will submit website URLs (for web development projects)'}
+                                    </p>
                                 </div>
                             </div>
                         </div>

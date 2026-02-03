@@ -130,6 +130,15 @@ class SupabaseRubrics implements RubricsApi {
         return { data: data as Rubric | null, error }
     }
 
+    async getById(id: string) {
+        const { data, error } = await supabase
+            .from('rubrics')
+            .select('*')
+            .eq('id', id)
+            .single()
+        return { data: data as Rubric | null, error }
+    }
+
     async getByAssignment(assignmentId: string) {
         const { data, error } = await supabase
             .from('rubrics')

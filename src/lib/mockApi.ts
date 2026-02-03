@@ -219,6 +219,13 @@ class MockRubrics implements RubricsApi {
         return { data: newRubric, error: null }
     }
 
+    async getById(id: string) {
+        await delay(200)
+        const rubrics = JSON.parse(localStorage.getItem(RUBRICS_KEY) || '[]')
+        const found = rubrics.find((r: Rubric) => r.id === id)
+        return { data: found || null, error: found ? null : { message: 'Rubric not found' } }
+    }
+
     async getByAssignment(assignmentId: string) {
         await delay(200)
         const rubrics = JSON.parse(localStorage.getItem(RUBRICS_KEY) || '[]')
