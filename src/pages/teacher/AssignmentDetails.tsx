@@ -396,20 +396,47 @@ export default function AssignmentDetails() {
 
                                 <div className="border-t border-gray-100 dark:border-gray-800 pt-10">
                                     <h3 className="text-xs font-black text-gray-700 dark:text-gray-300 uppercase tracking-widest mb-8 text-center">Grading Rubric</h3>
-                                    <div className="grid gap-4">
-                                        {rubricItems.map((item, idx) => (
-                                            <div key={idx} className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-50 dark:border-gray-800/50 flex justify-between items-center group">
-                                                <div className="flex-1">
-                                                    <h4 className="text-sm font-black text-gray-900 dark:text-white mb-1">{item.title}</h4>
-                                                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.description}</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-800">
-                                                        {item.max_points} pts
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        ))}
+                                    <div className="space-y-4">
+                                        {rubricItems.map((item, index) => {
+                                            const renderOverviewItem = (currentItem: RubricItem, itemIdx: number, parentPrefix?: string) => {
+                                                const prefix = parentPrefix ? `${parentPrefix}.${itemIdx + 1}` : `${itemIdx + 1}`
+                                                const hasSubcriteria = currentItem.subcriteria && currentItem.subcriteria.length > 0
+
+                                                const calculateMax = (it: RubricItem): number => {
+                                                    if (it.subcriteria && it.subcriteria.length > 0) {
+                                                        return it.subcriteria.reduce((sum, sub) => sum + calculateMax(sub), 0)
+                                                    }
+                                                    return it.max_points || 0
+                                                }
+
+                                                return (
+                                                    <div key={currentItem.id} className={parentPrefix ? 'ml-6 border-l border-gray-100 dark:border-gray-800/50 pl-4 mt-3' : ''}>
+                                                        <div className={`p-6 rounded-2xl border flex justify-between items-center group transition-all ${hasSubcriteria
+                                                            ? 'bg-indigo-50/5 dark:bg-indigo-900/5 border-indigo-100/30'
+                                                            : 'bg-gray-50/50 dark:bg-gray-800/30 border-gray-50 dark:border-gray-800/50'}`}>
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{prefix}.</span>
+                                                                    <h4 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">{currentItem.title}</h4>
+                                                                </div>
+                                                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 line-clamp-1 group-hover:line-clamp-none transition-all">{currentItem.description}</p>
+                                                            </div>
+                                                            <div className="text-right ml-4">
+                                                                <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 bg-white dark:bg-gray-800 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-800 shadow-sm">
+                                                                    {calculateMax(currentItem)} pts
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        {hasSubcriteria && (
+                                                            <div className="space-y-3">
+                                                                {currentItem.subcriteria!.map((sub, idx) => renderOverviewItem(sub, idx, prefix))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )
+                                            }
+                                            return renderOverviewItem(item, index)
+                                        })}
                                     </div>
                                 </div>
                             </div>
@@ -572,31 +599,69 @@ export default function AssignmentDetails() {
                                                     </div>
 
                                                     {review.score !== null && review.feedback && typeof review.feedback === 'object' && (
-                                                        <div className="border-t border-gray-100 dark:border-gray-800 pt-6 space-y-6">
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                                {rubricItems.map((item) => {
+                                                        <div className="border-t border-gray-100 dark:border-gray-800 pt-10 space-y-4">
+                                                            <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Detailed Breakdown</h5>
+                                                            <div className="space-y-4">
+                                                                {rubricItems.map((item, index) => {
                                                                     const fb = review.feedback as any;
-                                                                    const score = fb?.scores?.[item.id] || 0;
-                                                                    const comment = fb?.criteriaFeedback?.[item.id] || '';
+                                                                    const scores = fb?.scores || {};
+                                                                    const criteriaFeedback = fb?.criteriaFeedback || {};
 
-                                                                    return (
-                                                                        <div key={item.id} className="bg-gray-50/50 dark:bg-gray-900/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800/50">
-                                                                            <div className="flex justify-between items-center mb-2">
-                                                                                <span className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">{item.title}</span>
-                                                                                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded">
-                                                                                    {score}/{item.max_points} pts
-                                                                                </span>
+                                                                    const renderNestedFeedback = (currentItem: RubricItem, itemIdx: number, parentPrefix?: string) => {
+                                                                        const prefix = parentPrefix ? `${parentPrefix}.${itemIdx + 1}` : `${itemIdx + 1}`
+                                                                        const hasSubcriteria = currentItem.subcriteria && currentItem.subcriteria.length > 0
+
+                                                                        const calculateScore = (it: RubricItem): number => {
+                                                                            if (it.subcriteria && it.subcriteria.length > 0) {
+                                                                                return it.subcriteria.reduce((sum, sub) => sum + calculateScore(sub), 0)
+                                                                            }
+                                                                            return scores[it.id] || 0
+                                                                        }
+
+                                                                        const calculateMax = (it: RubricItem): number => {
+                                                                            if (it.subcriteria && it.subcriteria.length > 0) {
+                                                                                return it.subcriteria.reduce((sum, sub) => sum + calculateMax(sub), 0)
+                                                                            }
+                                                                            return it.max_points || 0
+                                                                        }
+
+                                                                        const currentScore = calculateScore(currentItem)
+                                                                        const currentMax = calculateMax(currentItem)
+
+                                                                        return (
+                                                                            <div key={currentItem.id} className={parentPrefix ? 'ml-6 border-l border-gray-50 dark:border-gray-800/50 pl-4 mt-3' : ''}>
+                                                                                <div className={`p-5 rounded-2xl border transition-all ${hasSubcriteria
+                                                                                    ? 'bg-indigo-50/5 dark:bg-indigo-900/5 border-indigo-100/30'
+                                                                                    : 'bg-gray-50/30 dark:bg-gray-900/20 border-gray-100 dark:border-gray-800/50'}`}>
+                                                                                    <div className="flex justify-between items-start mb-2">
+                                                                                        <div>
+                                                                                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{prefix}.</span>
+                                                                                            <span className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest ml-2">{currentItem.title}</span>
+                                                                                        </div>
+                                                                                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-white dark:bg-gray-800 px-2 py-0.5 rounded shadow-sm border border-gray-100 dark:border-gray-700">
+                                                                                            {currentScore}/{currentMax} pts
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    {!hasSubcriteria && (
+                                                                                        <p className="text-xs font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic mt-2 bg-white/50 dark:bg-gray-800/50 p-2 rounded-lg">
+                                                                                            "{criteriaFeedback[currentItem.id] || 'No comment provided.'}"
+                                                                                        </p>
+                                                                                    )}
+                                                                                    {hasSubcriteria && (
+                                                                                        <div className="space-y-3">
+                                                                                            {currentItem.subcriteria!.map((sub, idx) => renderNestedFeedback(sub, idx, prefix))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
                                                                             </div>
-                                                                            <p className="text-xs font-bold text-gray-700 dark:text-gray-300 leading-relaxed italic">
-                                                                                "{comment || 'No comment provided.'}"
-                                                                            </p>
-                                                                        </div>
-                                                                    );
+                                                                        )
+                                                                    }
+                                                                    return renderNestedFeedback(item, index)
                                                                 })}
                                                             </div>
                                                             {(review.feedback as any).overallTips && (
-                                                                <div className="bg-indigo-50/30 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100/20 dark:border-indigo-800/20">
-                                                                    <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Overall Tips</p>
+                                                                <div className="bg-indigo-50/30 dark:bg-indigo-900/10 p-5 rounded-xl border border-indigo-100/20 dark:border-indigo-800/20 mt-6">
+                                                                    <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-2">Overall Tips</p>
                                                                     <p className="text-xs font-bold text-gray-600 dark:text-gray-400 italic">"{(review.feedback as any).overallTips}"</p>
                                                                 </div>
                                                             )}

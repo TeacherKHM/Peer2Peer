@@ -101,6 +101,24 @@ class MockAuth implements AuthApi {
         this.currentSession = null
         localStorage.removeItem('p2p_session')
         this.notify('SIGNED_OUT', null)
+        return { error: null }
+    }
+
+    async listStudents() {
+        await delay(300)
+        const profiles = JSON.parse(localStorage.getItem('p2p_profiles') || '[]')
+        const students = profiles.filter((p: Profile) => p.role === 'student')
+        return { data: students, error: null }
+    }
+
+    async resetPassword(_email: string) {
+        await delay(300)
+        return { error: null }
+    }
+
+    async updatePassword(_password: string) {
+        await delay(300)
+        return { error: null }
     }
 
     async getSession() {
@@ -308,6 +326,22 @@ class MockSubmissions implements SubmissionsApi {
         localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(submissions))
         return { data: submissions[index], error: null }
     }
+
+    async get(id: string) {
+        await delay(200)
+        const submissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY) || '[]')
+        const sub = submissions.find((s: Submission) => s.id === id)
+        if (!sub) return { data: null, error: { message: 'Not found' } }
+
+        const assignments = JSON.parse(localStorage.getItem(ASSIGNMENTS_KEY) || '[]')
+        return {
+            data: {
+                ...sub,
+                assignment: assignments.find((a: Assignment) => a.id === sub.assignment_id)
+            },
+            error: null
+        }
+    }
 }
 
 class MockReviews implements ReviewsApi {
@@ -327,13 +361,114 @@ class MockReviews implements ReviewsApi {
 
     async listToReview(reviewerId: string) {
         await delay(300)
-        // For mock, we simply return all reviews assigned to this reviewer
-        // In reality, this might involve complex logic to find submissions assigned to this reviewer
-        // But the 'reviews' table stores the relationship "submission_id" and "reviewer_id".
-        // So we just query the reviews table.
         const reviews = JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]')
         const assignedReviews = reviews.filter((r: Review) => r.reviewer_id === reviewerId)
         return { data: assignedReviews, error: null }
+    }
+
+    async get(id: string) {
+        await delay(200)
+        const reviews = JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]')
+        const r = reviews.find((r: Review) => r.id === id)
+        if (!r) return { data: null, error: { message: 'Not found' } }
+
+        const submissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY) || '[]')
+        const sub = submissions.find((s: Submission) => s.id === r.submission_id)
+        const profiles = JSON.parse(localStorage.getItem('p2p_profiles') || '[]')
+        const assignments = JSON.parse(localStorage.getItem(ASSIGNMENTS_KEY) || '[]')
+
+        return {
+            data: {
+                ...r,
+                submission: {
+                    ...sub,
+                    profile: profiles.find((p: Profile) => p.id === sub.student_id)
+                },
+                assignment: assignments.find((a: Assignment) => a.id === sub.assignment_id)
+            },
+            error: null
+        }
+    }
+
+    async assignPeerReviews(_assignmentId: string, reviews: any[]) {
+        await delay(500)
+        const existingReviews = JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]')
+        const newReviews = reviews.map(r => ({ ...r, id: crypto.randomUUID(), created_at: new Date().toISOString() }))
+        localStorage.setItem(REVIEWS_KEY, JSON.stringify([...existingReviews, ...newReviews]))
+        return { error: null }
+    }
+
+    async listToReviewWithDetails(reviewerId: string) {
+        await delay(300)
+        const reviews = JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]')
+        const submissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY) || '[]')
+        const profiles = JSON.parse(localStorage.getItem('p2p_profiles') || '[]')
+        const assignments = JSON.parse(localStorage.getItem(ASSIGNMENTS_KEY) || '[]')
+
+        const assigned = reviews
+            .filter((r: Review) => r.reviewer_id === reviewerId)
+            .map((r: Review) => {
+                const sub = submissions.find((s: Submission) => s.id === r.submission_id)
+                return {
+                    ...r,
+                    submission: {
+                        ...sub,
+                        profile: profiles.find((p: Profile) => p.id === sub.student_id)
+                    },
+                    assignment: assignments.find((a: Assignment) => a.id === sub.assignment_id)
+                }
+            })
+        return { data: assigned, error: null }
+    }
+
+    async listByAssignment(assignmentId: string) {
+        await delay(300)
+        const reviews = JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]')
+        const submissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY) || '[]')
+        const profiles = JSON.parse(localStorage.getItem('p2p_profiles') || '[]')
+
+        const assignmentReviews = reviews
+            .filter((r: Review) => {
+                const sub = submissions.find((s: Submission) => s.id === r.submission_id)
+                return sub?.assignment_id === assignmentId
+            })
+            .map((r: Review) => {
+                const sub = submissions.find((s: Submission) => s.id === r.submission_id)
+                return {
+                    ...r,
+                    reviewer: profiles.find((p: Profile) => p.id === r.reviewer_id),
+                    submission: {
+                        ...sub,
+                        profile: profiles.find((p: Profile) => p.id === sub.student_id)
+                    }
+                }
+            })
+        return { data: assignmentReviews, error: null }
+    }
+
+    async update(id: string, updates: any) {
+        await delay(300)
+        const reviews = JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]')
+        const index = reviews.findIndex((r: Review) => r.id === id)
+        if (index === -1) return { data: null, error: { message: 'Not found' } }
+
+        reviews[index] = { ...reviews[index], ...updates }
+        localStorage.setItem(REVIEWS_KEY, JSON.stringify(reviews))
+        return { data: reviews[index], error: null }
+    }
+
+    async listReviewsForSubmission(submissionId: string) {
+        await delay(300)
+        const reviews = JSON.parse(localStorage.getItem(REVIEWS_KEY) || '[]')
+        const profiles = JSON.parse(localStorage.getItem('p2p_profiles') || '[]')
+
+        const submissionReviews = reviews
+            .filter((r: Review) => r.submission_id === submissionId)
+            .map((r: Review) => ({
+                ...r,
+                reviewer: profiles.find((p: Profile) => p.id === r.reviewer_id)
+            }))
+        return { data: submissionReviews, error: null }
     }
 }
 
