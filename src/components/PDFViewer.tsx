@@ -51,7 +51,7 @@ export default function PDFViewer({ url, title, onClose }: PDFViewerProps) {
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative">
+                <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
                     <iframe
                         src={`${url}#toolbar=0`}
                         className="absolute inset-0 w-full h-full border-none"

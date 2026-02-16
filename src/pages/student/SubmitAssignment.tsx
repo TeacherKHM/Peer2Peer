@@ -106,9 +106,14 @@ export default function SubmitAssignment() {
 
             showNotification('success', 'Assignment submitted successfully!')
             navigate('/')
-        } catch (error) {
-            console.error('Error submitting:', error)
-            showNotification('error', 'Failed to submit: ' + ((error as any).message || 'Unknown error'))
+        } catch (error: any) {
+            console.error('Detailed submission error:', {
+                error,
+                message: error.message,
+                details: error.details,
+                hint: error.hint
+            })
+            showNotification('error', `Failed to submit: ${error.message || 'Check your connection or file size.'}`)
         } finally {
             setSubmitting(false)
         }

@@ -271,7 +271,7 @@ export default function PerformReview() {
                             </div>
                             <a href={review.submission.file_url} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:text-indigo-500 font-bold transition-colors">Open Full Page</a>
                         </div>
-                        <div className="flex-1 bg-gray-100 dark:bg-gray-950 overflow-auto">
+                        <div className="flex-1 bg-gray-100 dark:bg-gray-950 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
                             <iframe
                                 src={getPdfUrl()}
                                 className="w-full h-full border-none"

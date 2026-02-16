@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, MessageSquare, ClipboardCheck, Loader2, Info } from 'lucide-react'
+import { ArrowLeft, MessageSquare, ClipboardCheck, Loader2, Info, Users } from 'lucide-react'
 import { api } from '../../lib/bootstrap'
 import type { Review, Rubric } from '../../lib/api'
 import { type RubricItem } from '../../components/RubricBuilder'
@@ -92,12 +92,12 @@ export default function ViewResults() {
                             <p className="text-sm font-medium">Evaluation is still in progress. Please check back later.</p>
                         </div>
                     ) : (
-                        reviews.map((review, idx) => (
+                        reviews.map((review) => (
                             <div key={review.id} className="card-premium overflow-hidden bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
                                 <div className="px-8 py-5 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
                                     <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-widest flex items-center gap-3">
-                                        <div className="h-8 w-8 rounded-full bg-white dark:bg-gray-800 border-2 border-indigo-100 dark:border-indigo-900 flex items-center justify-center text-xs text-indigo-600 shadow-sm">
-                                            #{idx + 1}
+                                        <div className="h-8 w-8 rounded-full bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 flex items-center justify-center text-xs text-indigo-600 shadow-sm">
+                                            <Users className="h-4 w-4" />
                                         </div>
                                         Anonymous Peer Review
                                     </h3>
@@ -141,33 +141,37 @@ export default function ViewResults() {
                                                     const maxPoints = calculateMaxVal(currentItem)
 
                                                     return (
-                                                        <div key={currentItem.id} className={parentPrefix ? 'ml-6 border-l-2 border-gray-50 dark:border-gray-800/50 pl-4' : ''}>
-                                                            <div className={`p-5 rounded-2xl border transition-all ${hasSubcriteria
+                                                        <div key={currentItem.id} className={parentPrefix ? 'ml-6' : 'mb-2'}>
+                                                            <div className={`p-3 rounded-xl border transition-all ${hasSubcriteria
                                                                 ? 'bg-indigo-50/10 dark:bg-indigo-900/5 border-indigo-100/50 dark:border-indigo-900/30'
                                                                 : 'bg-gray-50/50 dark:bg-gray-900/40 border-gray-100 dark:border-gray-800/50'}`}>
-                                                                <div className="flex justify-between items-start mb-3">
-                                                                    <div className="flex-1">
-                                                                        <div className="flex items-center gap-2 mb-1">
+                                                                <div className="flex justify-between items-center">
+                                                                    <div className="flex flex-col gap-1"> {/* Changed to flex-col to stack title and description */}
+                                                                        <div className="flex items-center gap-3">
                                                                             <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{prefix}.</span>
-                                                                            <span className="font-black text-gray-900 dark:text-white uppercase text-[10px] tracking-widest">{currentItem.title}</span>
+                                                                            <span className="font-bold text-gray-900 dark:text-white text-xs tracking-tight">{currentItem.title}</span>
                                                                         </div>
-                                                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1 hover:line-clamp-none transition-all">{currentItem.description}</p>
+                                                                        {currentItem.description && (
+                                                                            <p className="text-[10px] text-gray-500 dark:text-gray-400 ml-[28px] leading-tight">{currentItem.description}</p>
+                                                                        )}
                                                                     </div>
-                                                                    <span className="text-[10px] font-black px-2 py-0.5 bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 rounded-md border border-gray-100 dark:border-gray-700 shadow-sm shrink-0">
-                                                                        {totalScore}/{maxPoints} pts
-                                                                    </span>
+                                                                    <div className="flex items-center gap-4">
+                                                                        <span className="text-[10px] font-black tabular-nums text-indigo-600 dark:text-indigo-400">
+                                                                            {totalScore} / {maxPoints}
+                                                                        </span>
+                                                                    </div>
                                                                 </div>
 
-                                                                {!hasSubcriteria && (
-                                                                    <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-50 dark:border-gray-700/30">
-                                                                        <p className="text-xs font-bold text-gray-600 dark:text-gray-400 leading-relaxed italic">
-                                                                            "{criteriaFeedback[currentItem.id] || 'No specific comment provided.'}"
+                                                                {!hasSubcriteria && criteriaFeedback[currentItem.id] && (
+                                                                    <div className="mt-2 bg-white/50 dark:bg-gray-800/50 p-2 rounded-lg border border-gray-50 dark:border-gray-700/30">
+                                                                        <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed italic">
+                                                                            "{criteriaFeedback[currentItem.id]}"
                                                                         </p>
                                                                     </div>
                                                                 )}
 
                                                                 {hasSubcriteria && (
-                                                                    <div className="mt-4 space-y-4">
+                                                                    <div className="mt-2 space-y-2">
                                                                         {currentItem.subcriteria!.map((sub, idx) => renderCriteriaResults(sub, idx, prefix))}
                                                                     </div>
                                                                 )}

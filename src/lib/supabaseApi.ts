@@ -289,7 +289,7 @@ class SupabaseReviews implements ReviewsApi {
                 *,
                 submission:submissions!inner (
                     *,
-                    author:profiles!inner (*),
+                    profile:profiles!inner (*),
                     assignment:assignments!inner (*)
                 )
             `)
@@ -300,7 +300,7 @@ class SupabaseReviews implements ReviewsApi {
             assignment: r.submission.assignment,
             submission: {
                 ...r.submission,
-                profile: r.submission.author, // mapped from author alias
+                profile: r.submission.profile, // mapped from profile join
                 assignment: undefined
             }
         }))
