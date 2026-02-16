@@ -10,6 +10,11 @@ interface PDFViewerProps {
 export default function PDFViewer({ url, title, onClose }: PDFViewerProps) {
     const [isFullPage, setIsFullPage] = useState(false)
 
+    const isIOS = () => {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className={`bg-white dark:bg-gray-900 rounded-xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${isFullPage ? 'w-full h-full' : 'w-full max-w-5xl h-[85vh]'}`}>
@@ -60,16 +65,38 @@ export default function PDFViewer({ url, title, onClose }: PDFViewerProps) {
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative overflow-hidden">
-                    <iframe
-                        src={`${url}#toolbar=0&view=FitH`}
-                        className="w-full h-full border-none"
-                        style={{
-                            WebkitOverflowScrolling: 'touch',
-                            display: 'block'
-                        }}
-                        title="PDF Viewer"
-                    />
+                <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                    {isIOS() ? (
+                        <div className="w-full h-full min-h-[1000px]">
+                            <object
+                                data={`${url}#toolbar=0&view=FitH`}
+                                type="application/pdf"
+                                className="w-full h-full min-h-[1000px]"
+                            >
+                                <div className="p-12 text-center text-gray-500">
+                                    <p className="mb-6 font-bold uppercase tracking-widest text-[10px]">Enhanced Preview Mode Recommended</p>
+                                    <a
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="btn-mac-primary inline-flex px-8"
+                                    >
+                                        Open Full Document
+                                    </a>
+                                </div>
+                            </object>
+                        </div>
+                    ) : (
+                        <iframe
+                            src={`${url}#toolbar=0&view=FitH`}
+                            className="w-full h-full border-none"
+                            style={{
+                                WebkitOverflowScrolling: 'touch',
+                                display: 'block'
+                            }}
+                            title="PDF Viewer"
+                        />
+                    )}
                 </div>
 
                 {/* Footer / Status */}

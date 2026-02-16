@@ -22,6 +22,11 @@ export default function PerformReview() {
 
     const [pdfZoom, setPdfZoom] = useState(100)
 
+    const isIOS = () => {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    };
+
     useEffect(() => {
         if (id) fetchReviewData()
     }, [id])
@@ -281,17 +286,39 @@ export default function PerformReview() {
                                 </a>
                             </div>
                         </div>
-                        <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative overflow-hidden">
-                            <iframe
-                                src={getPdfUrl()}
-                                className="w-full h-full border-none"
-                                style={{
-                                    WebkitOverflowScrolling: 'touch',
-                                    display: 'block'
-                                }}
-                                title="Submission Preview"
-                                key={pdfZoom}
-                            />
+                        <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                            {isIOS() ? (
+                                <div className="w-full h-full min-h-[1000px]">
+                                    <object
+                                        data={getPdfUrl()}
+                                        type="application/pdf"
+                                        className="w-full h-full min-h-[1000px]"
+                                    >
+                                        <div className="p-8 text-center text-gray-500">
+                                            <p className="mb-4">PDF Preview not supported natively on this device.</p>
+                                            <a
+                                                href={review.submission.file_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="btn-mac-primary inline-flex"
+                                            >
+                                                Open Full Page to View All Pages
+                                            </a>
+                                        </div>
+                                    </object>
+                                </div>
+                            ) : (
+                                <iframe
+                                    src={getPdfUrl()}
+                                    className="w-full h-full border-none"
+                                    style={{
+                                        WebkitOverflowScrolling: 'touch',
+                                        display: 'block'
+                                    }}
+                                    title="Submission Preview"
+                                    key={pdfZoom}
+                                />
+                            )}
                         </div>
                     </div>
                 </div>
