@@ -657,6 +657,9 @@ export default function AssignmentDetails() {
                                                                                                             {currentScore}/{currentMax}
                                                                                                         </span>
                                                                                                     </div>
+                                                                                                    {currentItem.description && (
+                                                                                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 ml-5 leading-tight mb-2 italic">{currentItem.description}</p>
+                                                                                                    )}
                                                                                                     {!hasSubcriteria && criteriaFeedback[currentItem.id] && (
                                                                                                         <p className="text-[11px] text-gray-600 dark:text-gray-400 italic mt-2 bg-white/50 dark:bg-gray-800/50 p-2 rounded-lg">
                                                                                                             "{criteriaFeedback[currentItem.id]}"
