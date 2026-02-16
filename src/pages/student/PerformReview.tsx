@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Loader2, Save, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Loader2, Save, AlertCircle, ExternalLink } from 'lucide-react'
 import { api } from '../../lib/bootstrap'
 import type { Review, Submission, Profile, Rubric, Assignment } from '../../lib/api'
 import { type RubricItem } from '../../components/RubricBuilder'
@@ -269,12 +269,26 @@ export default function PerformReview() {
                                     </button>
                                 </div>
                             </div>
-                            <a href={review.submission.file_url} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:text-indigo-500 font-bold transition-colors">Open Full Page</a>
+                            <div className="flex items-center gap-4">
+                                <a
+                                    href={review.submission.file_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-500 font-bold transition-colors"
+                                >
+                                    <ExternalLink className="h-3 w-3" />
+                                    Open Full Page
+                                </a>
+                            </div>
                         </div>
-                        <div className="flex-1 bg-gray-100 dark:bg-gray-950 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                        <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative overflow-hidden">
                             <iframe
                                 src={getPdfUrl()}
                                 className="w-full h-full border-none"
+                                style={{
+                                    WebkitOverflowScrolling: 'touch',
+                                    display: 'block'
+                                }}
                                 title="Submission Preview"
                                 key={pdfZoom}
                             />

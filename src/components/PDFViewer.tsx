@@ -1,4 +1,4 @@
-import { X, Maximize2, Minimize2, Download } from 'lucide-react'
+import { X, Maximize2, Minimize2, Download, ExternalLink } from 'lucide-react'
 import { useState } from 'react'
 
 interface PDFViewerProps {
@@ -33,6 +33,15 @@ export default function PDFViewer({ url, title, onClose }: PDFViewerProps) {
                         >
                             <Download className="h-5 w-5" />
                         </a>
+                        <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                            title="Open in New Tab"
+                        >
+                            <ExternalLink className="h-5 w-5" />
+                        </a>
                         <button
                             onClick={() => setIsFullPage(!isFullPage)}
                             className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
@@ -51,10 +60,14 @@ export default function PDFViewer({ url, title, onClose }: PDFViewerProps) {
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div className="flex-1 bg-gray-100 dark:bg-gray-950 relative overflow-hidden">
                     <iframe
-                        src={`${url}#toolbar=0`}
-                        className="absolute inset-0 w-full h-full border-none"
+                        src={`${url}#toolbar=0&view=FitH`}
+                        className="w-full h-full border-none"
+                        style={{
+                            WebkitOverflowScrolling: 'touch',
+                            display: 'block'
+                        }}
                         title="PDF Viewer"
                     />
                 </div>
