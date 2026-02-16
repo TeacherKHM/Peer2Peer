@@ -62,8 +62,6 @@ export default function AssignmentDetails() {
             if (assignmentRes.error) throw assignmentRes.error
 
             setAssignment(assignmentRes.data)
-            setSubmissions(submissionsRes.data || [])
-            setReviews(reviewsRes.data || [])
 
             if (assignmentRes.data) {
                 setFormData({
@@ -73,8 +71,8 @@ export default function AssignmentDetails() {
                 })
             }
 
-            if (rubricRes.data) {
-                setRubricItems(rubricRes.data.criteria as unknown as RubricItem[])
+            if (rubRes.data) {
+                setRubricItems(rubRes.data.criteria as unknown as RubricItem[])
             }
         } catch (error) {
             console.error('Error fetching assignment details:', error)
